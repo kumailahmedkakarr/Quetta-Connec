@@ -196,7 +196,8 @@ fun QuettaMainLayout(viewModel: QuettaViewModel) {
             QuettaBottomNavigationBar(
                 currentTab = currentTab,
                 onTabSelected = { viewModel.selectTab(it) },
-                currentLang = currentLang
+                currentLang = currentLang,
+                currentRole = currentRole
             )
         }
     ) { innerPadding ->
@@ -528,7 +529,8 @@ fun QuettaHeaderBar(
 fun QuettaBottomNavigationBar(
     currentTab: String,
     onTabSelected: (String) -> Unit,
-    currentLang: String
+    currentLang: String,
+    currentRole: String = "Citizen"
 ) {
     NavigationBar(
         containerColor = Color.White,
@@ -544,13 +546,16 @@ fun QuettaBottomNavigationBar(
             )
         }
     ) {
-        val navItems = listOf(
-            Triple("Home", Icons.Default.Home, "Home"),
-            Triple("Complaints", Icons.Default.ReportProblem, "complaints"),
-            Triple("Map", Icons.Default.Map, "map"),
-            Triple("AI Assistant", Icons.Default.SmartToy, "ai_assistant"),
-            Triple("Services", Icons.Default.Apps, "services")
-        )
+        val navItems = buildList {
+            add(Triple("Home", Icons.Default.Home, "Home"))
+            add(Triple("Complaints", Icons.Default.ReportProblem, "complaints"))
+            add(Triple("Map", Icons.Default.Map, "map"))
+            add(Triple("AI Assistant", Icons.Default.SmartToy, "ai_assistant"))
+            add(Triple("Services", Icons.Default.Apps, "services"))
+            if (currentRole.contains("Admin") || currentRole.contains("Officer")) {
+                add(Triple("Admin", Icons.Default.Settings, "admin"))
+            }
+        }
 
         navItems.forEach { (tabName, icon, localeKey) ->
             NavigationBarItem(
@@ -2234,184 +2239,736 @@ fun AdminScreen(viewModel: QuettaViewModel, currentLang: String) {
     val complaints by viewModel.complaints.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    // Admin states
+    var adminSubTab by remember { mutableStateOf("Analytics") }
+    var expandedComplaintId by remember { mutableStateOf<Long?>(null) }
+
+    // Broadcast Board form states
+    var broadcastTitle by remember { mutableStateOf("") }
+    var broadcastContent by remember { mutableStateOf("") }
+    var broadcastType by remember { mutableStateOf("MUNICIPAL UPDATE") }
+    var isUrgentAlert by remember { mutableStateOf(false) }
+
     val pendingCount = complaints.count { it.status == "Pending" }
     val progressCount = complaints.count { it.status == "In Progress" || it.status == "Assigned" }
     val resolvedCount = complaints.count { it.status == "Resolved" }
 
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .background(Color(0xFFF8F9FB)) // Clean minimal background
     ) {
-        item {
+        // Stylish Sub-Header
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
             Text(
-                text = "Quetta Command & Control Center",
-                fontWeight = FontWeight.Black,
-                fontSize = 20.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = "Live analytics dashboard. Track department responsiveness & satisfaction indices.",
+                text = "ADMIN COMMAND CENTER",
+                fontWeight = FontWeight.ExtraBold,
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.secondary
+                letterSpacing = 1.5.sp,
+                color = Color(0xFF2563EB)
             )
-        }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Supervise municipal resources, broadcast warnings, and resolve public complaints live.",
+                fontSize = 12.sp,
+                color = Color(0xFF64748B)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
 
-        // Stats Row Card
-        item {
-            Card(
+            // Tab Buttons
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("PENDING", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.Red)
-                        Text("$pendingCount", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color.Red)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("ACTIVE", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFFF59E0B))
-                        Text("$progressCount", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color(0xFFF59E0B))
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("RESOLVED", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFF10B981))
-                        Text("$resolvedCount", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color(0xFF10B981))
-                    }
-                }
-            }
-        }
-
-        // Custom drawn Canvas resolving percentage chart
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Civic Resolution Success Rate", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Draw circular donut indicator showing resolving success
-                    val total = complaints.size.toFloat().coerceAtLeast(1f)
-                    val percent = (resolvedCount.toFloat() / total) * 100f
-
+                listOf("Analytics", "Complaints Manager", "Broadcast Board").forEach { subTab ->
+                    val isSelected = adminSubTab == subTab
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(110.dp),
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) Color(0xFFEFF6FF) else Color.Transparent)
+                            .clickable { adminSubTab = subTab }
+                            .border(
+                                width = 1.dp,
+                                color = if (isSelected) Color(0xFFBFDBFE) else Color(0xFFE2E8F0),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Canvas(modifier = Modifier.size(100.dp)) {
-                            // Grey background circle
-                            drawCircle(
-                                color = Color.LightGray.copy(alpha = 0.3f),
-                                radius = size.minDimension / 2,
-                                style = Stroke(width = 16f)
-                            )
-                            // Colored arc
-                            drawArc(
-                                color = Color(0xFF10B981),
-                                startAngle = -90f,
-                                sweepAngle = (percent / 100f) * 360f,
-                                useCenter = false,
-                                style = Stroke(width = 16f)
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("${percent.toInt()}%", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color(0xFF10B981))
-                            Text("Fixed", fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary)
-                        }
+                        Text(
+                            text = subTab,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected) Color(0xFF2563EB) else Color(0xFF64748B)
+                        )
                     }
                 }
             }
         }
 
-        // Department performance bar chart
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Department Response Metrics", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    val depts = listOf(
-                        Pair("QMC Corporation", 92),
-                        Pair("WASA Quetta", 65),
-                        Pair("C&W Balochistan", 80),
-                        Pair("Traffic Police", 95)
-                    )
-
-                    depts.forEach { (name, score) ->
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        // Sub-Tab Contents
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+        ) {
+            when (adminSubTab) {
+                "Analytics" -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(20.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // Quick Stats Row
+                        item {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                Text("$score% Compliance", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                // Pending
+                                Card(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(1.dp, Color(0xFFF1F5F9))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.Start
+                                    ) {
+                                        Text("PENDING", fontWeight = FontWeight.Bold, fontSize = 9.sp, color = Color(0xFFDC2626), letterSpacing = 0.5.sp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("$pendingCount", fontWeight = FontWeight.Black, fontSize = 26.sp, color = Color(0xFF0F172A))
+                                    }
+                                }
+                                // Active
+                                Card(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(1.dp, Color(0xFFF1F5F9))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.Start
+                                    ) {
+                                        Text("ACTIVE", fontWeight = FontWeight.Bold, fontSize = 9.sp, color = Color(0xFFD97706), letterSpacing = 0.5.sp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("$progressCount", fontWeight = FontWeight.Black, fontSize = 26.sp, color = Color(0xFF0F172A))
+                                    }
+                                }
+                                // Resolved
+                                Card(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(1.dp, Color(0xFFF1F5F9))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.Start
+                                    ) {
+                                        Text("RESOLVED", fontWeight = FontWeight.Bold, fontSize = 9.sp, color = Color(0xFF059669), letterSpacing = 0.5.sp)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("$resolvedCount", fontWeight = FontWeight.Black, fontSize = 26.sp, color = Color(0xFF0F172A))
+                                    }
+                                }
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            // Bar represent
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color.LightGray.copy(alpha = 0.3f))
+                        }
+
+                        // Donut Resolution success Rate Card
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, Color(0xFFF1F5F9))
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxHeight()
-                                        .fillMaxWidth(score / 100f)
-                                        .background(MaterialTheme.colorScheme.primary)
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text(
+                                        text = "Civic Resolution Success Rate",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    val total = complaints.size.toFloat().coerceAtLeast(1f)
+                                    val percent = (resolvedCount.toFloat() / total) * 100f
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(130.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Canvas(modifier = Modifier.size(110.dp)) {
+                                            drawCircle(
+                                                color = Color(0xFFF1F5F9),
+                                                radius = size.minDimension / 2,
+                                                style = Stroke(width = 14f)
+                                            )
+                                            drawArc(
+                                                color = Color(0xFF10B981),
+                                                startAngle = -90f,
+                                                sweepAngle = (percent / 100f) * 360f,
+                                                useCenter = false,
+                                                style = Stroke(width = 14f)
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(
+                                                text = "${percent.toInt()}%",
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 20.sp,
+                                                color = Color(0xFF059669)
+                                            )
+                                            Text(
+                                                text = "Completed Tasks",
+                                                fontSize = 9.sp,
+                                                color = Color(0xFF94A3B8),
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "High resolution rates keep citizens satisfied. WASA Quetta and QMC are coordinating resources actively.",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF64748B),
+                                        lineHeight = 15.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+
+                        // Department Response Metrics Card
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, Color(0xFFF1F5F9))
+                            ) {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text(
+                                        text = "Department Response Metrics",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    val depts = listOf(
+                                        Pair("QMC Corporation", 92),
+                                        Pair("WASA Quetta", 65),
+                                        Pair("C&W Balochistan", 80),
+                                        Pair("Traffic Police", 95)
+                                    )
+
+                                    depts.forEach { (name, score) ->
+                                        Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = name,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color(0xFF334155)
+                                                )
+                                                Text(
+                                                    text = "$score% Compliance",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color(0xFF2563EB)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(8.dp)
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(Color(0xFFF1F5F9))
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxHeight()
+                                                        .fillMaxWidth(score / 100f)
+                                                        .background(Color(0xFF2563EB))
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Export report toolbox card
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
+                                border = BorderStroke(1.dp, Color(0xFFDBEAFE))
+                            ) {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text(
+                                        text = "Generate Strategic Reports",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF1E40AF)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Compile authenticated ledger metrics. Ideal for Balochistan assembly audits and budget reviews.",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF2563EB),
+                                        lineHeight = 15.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Button(
+                                            onClick = {
+                                                Toast.makeText(context, "Exporting audit PDF ledger... Download started!", Toast.LENGTH_SHORT).show()
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("PDF Ledger", fontSize = 11.sp)
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                Toast.makeText(context, "Exporting metrics Excel ledger... Download started!", Toast.LENGTH_SHORT).show()
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2563EB)),
+                                            border = BorderStroke(1.dp, Color(0xFFBFDBFE)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.GridOn, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Excel Sheet", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                "Complaints Manager" -> {
+                    if (complaints.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckBoxOutlineBlank,
+                                    contentDescription = null,
+                                    tint = Color(0xFF94A3B8),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No civic complaints registered yet",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                                Text(
+                                    text = "Everything is perfectly peaceful in Quetta!",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF94A3B8)
                                 )
                             }
                         }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(20.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            item {
+                                Text(
+                                    text = "ACTIVE PUBLIC TICKETS (${complaints.size})",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 11.sp,
+                                    letterSpacing = 1.sp,
+                                    color = Color(0xFF64748B),
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+
+                            items(complaints) { complaint ->
+                                val isExpanded = expandedComplaintId == complaint.id
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            expandedComplaintId = if (isExpanded) null else complaint.id
+                                        },
+                                    shape = RoundedCornerShape(20.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (isExpanded) Color(0xFFBFDBFE) else Color(0xFFF1F5F9)
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = complaint.category.uppercase(),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = Color(0xFF2563EB),
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color(0xFFEFF6FF))
+                                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                                            )
+
+                                            // Status Badge
+                                            val badgeBg = when (complaint.status) {
+                                                "Pending" -> Color(0xFFFEF2F2)
+                                                "In Progress", "Assigned" -> Color(0xFFFFFBEB)
+                                                "Resolved" -> Color(0xFFECFDF5)
+                                                else -> Color(0xFFF1F5F9)
+                                            }
+                                            val badgeText = when (complaint.status) {
+                                                "Pending" -> Color(0xFFDC2626)
+                                                "In Progress", "Assigned" -> Color(0xFFD97706)
+                                                "Resolved" -> Color(0xFF059669)
+                                                else -> Color(0xFF475569)
+                                            }
+
+                                            Text(
+                                                text = complaint.status,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = badgeText,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(badgeBg)
+                                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Text(
+                                            text = complaint.title,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = Color(0xFF0F172A)
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = complaint.description,
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF475569),
+                                            lineHeight = 16.sp
+                                        )
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "By: ${complaint.citizenName}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF94A3B8)
+                                            )
+                                            Text(
+                                                text = "Dept: ${complaint.assigneeDept}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF2563EB)
+                                            )
+                                        }
+
+                                        // Expanded Interactive Quick Actions to change status
+                                        if (isExpanded) {
+                                            Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFF1F5F9))
+                                            Text(
+                                                text = "UPDATE TICKET STATUS",
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 9.sp,
+                                                letterSpacing = 1.sp,
+                                                color = Color(0xFF64748B),
+                                                modifier = Modifier.padding(bottom = 8.dp)
+                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                // Pending Chip button
+                                                val isPend = complaint.status == "Pending"
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(if (isPend) Color(0xFFFEE2E2) else Color(0xFFF1F5F9))
+                                                        .clickable {
+                                                            viewModel.updateComplaintStatus(complaint.id, "Pending")
+                                                            Toast.makeText(context, "Complaint status reverted to Pending", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        .border(
+                                                            width = 1.dp,
+                                                            color = if (isPend) Color(0xFFFCA5A5) else Color.Transparent,
+                                                            shape = RoundedCornerShape(10.dp)
+                                                        )
+                                                        .padding(vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text("Pending", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isPend) Color(0xFFDC2626) else Color(0xFF475569))
+                                                }
+
+                                                // Active / In Progress Chip button
+                                                val isActive = complaint.status == "In Progress" || complaint.status == "Assigned"
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(if (isActive) Color(0xFFFEF3C7) else Color(0xFFF1F5F9))
+                                                        .clickable {
+                                                            viewModel.updateComplaintStatus(complaint.id, "In Progress")
+                                                            Toast.makeText(context, "Complaint assigned and marked Active", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        .border(
+                                                            width = 1.dp,
+                                                            color = if (isActive) Color(0xFFFCD34D) else Color.Transparent,
+                                                            shape = RoundedCornerShape(10.dp)
+                                                        )
+                                                        .padding(vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text("Active", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isActive) Color(0xFFD97706) else Color(0xFF475569))
+                                                }
+
+                                                // Resolved Chip button
+                                                val isRes = complaint.status == "Resolved"
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(if (isRes) Color(0xFFD1FAE5) else Color(0xFFF1F5F9))
+                                                        .clickable {
+                                                            viewModel.updateComplaintStatus(complaint.id, "Resolved")
+                                                            Toast.makeText(context, "Complaint solved! Citizen notified.", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        .border(
+                                                            width = 1.dp,
+                                                            color = if (isRes) Color(0xFF6EE7B7) else Color.Transparent,
+                                                            shape = RoundedCornerShape(10.dp)
+                                                        )
+                                                        .padding(vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text("Resolved", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isRes) Color(0xFF059669) else Color(0xFF475569))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        // Export Report Tool Box
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Download Strategic Reports", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("Generate signed municipal ledger sheets for Balochistan assembly audit.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                Toast.makeText(context, "Exporting audit PDF schema... Download initiated!", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("PDF Ledger")
+                "Broadcast Board" -> {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(20.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        item {
+                            Text(
+                                text = "MUNICIPAL BROADCASTER BOARD",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.sp,
+                                letterSpacing = 1.sp,
+                                color = Color(0xFF64748B)
+                            )
                         }
-                        OutlinedButton(
-                            onClick = {
-                                Toast.makeText(context, "Exporting metrics Excel schema... Download initiated!", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.GridOn, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Excel Sheet")
+
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, Color(0xFFF1F5F9))
+                            ) {
+                                Column(modifier = Modifier.padding(20.dp)) {
+                                    Text(
+                                        text = "Compose New Broadcast",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    // Title Input
+                                    Text("Broadcast Title", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = broadcastTitle,
+                                        onValueChange = { broadcastTitle = it },
+                                        placeholder = { Text("e.g., WASA Water Line Repair", fontSize = 13.sp) },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Color(0xFF2563EB),
+                                            unfocusedBorderColor = Color(0xFFE2E8F0)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    // Content Input
+                                    Text("Message Content", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = broadcastContent,
+                                        onValueChange = { broadcastContent = it },
+                                        placeholder = { Text("Describe the update or warning in detail for citizens...", fontSize = 13.sp) },
+                                        minLines = 3,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = Color(0xFF2563EB),
+                                            unfocusedBorderColor = Color(0xFFE2E8F0)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    // Category chips
+                                    Text("Broadcast Category", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val categories = listOf("MUNICIPAL UPDATE", "TRAFFIC", "WEATHER ALERT", "WATER LINE", "HEALTH")
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        items(categories) { cat ->
+                                            val isSelected = broadcastType == cat
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (isSelected) Color(0xFF2563EB) else Color(0xFFF1F5F9))
+                                                    .clickable { broadcastType = cat }
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                            ) {
+                                                Text(
+                                                    text = cat,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) Color.White else Color(0xFF475569)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    // Urgent warning Red Toggle
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(if (isUrgentAlert) Color(0xFFFEF2F2) else Color(0xFFF8FAFC))
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "Mark as Urgent Red Alert",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = if (isUrgentAlert) Color(0xFF991B1B) else Color(0xFF334155)
+                                            )
+                                            Text(
+                                                text = "Will display instantly on user home screens.",
+                                                fontSize = 10.sp,
+                                                color = if (isUrgentAlert) Color(0xFFDC2626).copy(alpha = 0.8f) else Color(0xFF64748B)
+                                            )
+                                        }
+                                        Switch(
+                                            checked = isUrgentAlert,
+                                            onCheckedChange = { isUrgentAlert = it },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = Color(0xFFDC2626)
+                                            )
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(20.dp))
+
+                                    // Publish button
+                                    Button(
+                                        onClick = {
+                                            if (broadcastTitle.isBlank() || broadcastContent.isBlank()) {
+                                                Toast.makeText(context, "Please write both title and content first!", Toast.LENGTH_SHORT).show()
+                                                return@Button
+                                            }
+                                            viewModel.publishAlert(
+                                                title = broadcastTitle,
+                                                content = broadcastContent,
+                                                type = broadcastType,
+                                                isAlert = isUrgentAlert
+                                            )
+                                            Toast.makeText(context, "Broadcast disseminated across Quetta!", Toast.LENGTH_LONG).show()
+
+                                            // Reset inputs
+                                            broadcastTitle = ""
+                                            broadcastContent = ""
+                                            isUrgentAlert = false
+                                        },
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = if (isUrgentAlert) Color(0xFFDC2626) else Color(0xFF2563EB)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isUrgentAlert) Icons.Default.Warning else Icons.Default.Send,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (isUrgentAlert) "PUBLISH URGENT RED ALERT" else "PUBLISH BROADCAST NEWS",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
