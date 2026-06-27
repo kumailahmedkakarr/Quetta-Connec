@@ -1,0 +1,6 @@
+{
+  "name": "Quetta Connect",
+  "description": "Smart Civic Ecosystem for Quetta - One City, One Platform. Connects citizens, government, emergency services, business and AI-assisted governance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
